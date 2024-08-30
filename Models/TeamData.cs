@@ -1,4 +1,6 @@
-﻿namespace Tournament.Models
+﻿using Tournament.Common;
+
+namespace Tournament.Models
 {
     public class TeamData
     {
@@ -6,11 +8,13 @@
         public string ISOCode { get; set; }
         public int FIBARanking { get; set; }
         public List<Game> Games { get; set; }
+        public List<Game> Exibitions { get; set; }
         
         #region helperProperties
         
         public double Strength { get; private set; } = 0;
         public double PointDifferential { get; private set; } = 0;
+        public int Points { get; set; } = 0;
         private int RecentGames { get; set; }
         private int RecentWins { get; set; }
         private int TotalPointsScored { get; set; }
@@ -23,10 +27,14 @@
             Team = team;
             ISOCode = iSOCode;
             FIBARanking = fIBARanking;
+            Games = [];
+            Exibitions = [];
         }
 
         public void GetStats()
         {
+            if (!Games.Any()) return;
+
             RecentGames = Games.Count;
             RecentWins = Games.Count(game => int.Parse(game.Result.Split("-")[0]) > int.Parse(game.Result.Split("-")[1]));
             TotalPointsScored = Games.Sum(game => int.Parse(game.Result.Split("-")[0]));
@@ -36,8 +44,14 @@
 
         private double CalculateFormStrength(double maxDifferential)
         {
-            double winLossStrength = (double)RecentWins / RecentGames;
-            double pointDiffStrength = (PointDifferential >= 0)? PointDifferential / maxDifferential: 0;
+            var totalGames = Exibitions.Count + RecentGames;
+            var totalWins = Exibitions.Count(game => int.Parse(game.Result.Split("-")[0]) > int.Parse(game.Result.Split("-")[1])) + RecentWins;
+            var totalPointsScored = Exibitions.Sum(game => int.Parse(game.Result.Split("-")[0])) + TotalPointsScored;
+            var totalPointsConceded = Exibitions.Sum(game => int.Parse(game.Result.Split("-")[1])) + TotalPointsConceded;
+            var totalPointDifferential = (double)(totalPointsScored - totalPointsConceded) / totalGames;
+
+            double winLossStrength = (double)totalWins / totalGames;
+            double pointDiffStrength = (totalPointDifferential >= 0)? totalPointDifferential / maxDifferential: 0;
 
             return (winLossStrength * Constants.WinLossWeight) + (pointDiffStrength * Constants.PointDiffWeight);
         }
@@ -53,7 +67,7 @@
 
         public override string? ToString()
         {
-            return $"  - {Team} ({ISOCode}), FIBA Ranking: {FIBARanking}, Strength: {Strength:F2}";
+            return $" {Team}\t {RecentWins} / {RecentGames - RecentWins} / {Points} / {TotalPointsScored} / {TotalPointsConceded} / {TotalPointsScored - TotalPointsConceded}";
         }
     }
 }

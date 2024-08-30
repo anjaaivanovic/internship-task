@@ -1,4 +1,4 @@
-﻿namespace Tournament.Models
+﻿namespace Tournament.Common
 {
     public static class Constants
     {

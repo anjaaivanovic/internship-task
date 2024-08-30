@@ -9,7 +9,7 @@ namespace Tournament
             var tournament = TournamentManager.Instance;
 
             tournament.CalculateTeamStrengths();
-            tournament.PrintGroupData();
+            tournament.RunTournament();
         }
     }
 }
