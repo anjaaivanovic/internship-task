@@ -7,8 +7,6 @@ namespace Tournament
         static void Main(string[] args)
         {
             var tournament = TournamentManager.Instance;
-
-            tournament.CalculateTeamStrengths();
             tournament.RunTournament();
         }
     }

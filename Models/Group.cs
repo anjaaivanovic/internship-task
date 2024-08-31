@@ -6,6 +6,12 @@
         public List<TeamData> Teams { get; set; }
         public List<(string, string)> Pairings { get; set; }
 
+        public Group()
+        {
+            Teams = [];
+            Pairings = [];
+        }
+
         #region Ranking
 
         public void RankTeams()
@@ -89,7 +95,41 @@
             tiedTeams.Sort((team1, team2) => pointDifferentials[team2].CompareTo(pointDifferentials[team1]));
         }
 
+        public void RankPotTeams()
+        {
+            Teams = Teams.OrderByDescending(team => team.Points)
+                .ThenByDescending(team => team.TotalPointsScored - team.TotalPointsConceded)
+                .ThenByDescending(team => team.TotalPointsScored)
+                .ToList();
+        }
+
         #endregion
+
+        public void GeneratePairings()
+        {
+            var pairings = new List<(string, string)>();
+            int numTeams = Teams.Count;
+
+            for (int round = 0; round < numTeams - 1; round++)
+            {
+                for (int i = 0; i < numTeams / 2; i++)
+                {
+                    var team1 = Teams[i];
+                    var team2 = Teams[numTeams - 1 - i];
+
+                    if (team1 != null && team2 != null)
+                    {
+                        pairings.Add((team1.ISOCode, team2.ISOCode));
+                    }
+                }
+
+                var lastTeam = Teams[numTeams - 1];
+                Teams.RemoveAt(numTeams - 1);
+                Teams.Insert(1, lastTeam);
+            }
+
+            Pairings = pairings;
+        }
 
         public override string? ToString()
         {

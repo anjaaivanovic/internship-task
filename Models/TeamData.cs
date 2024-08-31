@@ -17,8 +17,8 @@ namespace Tournament.Models
         public int Points { get; set; } = 0;
         private int RecentGames { get; set; }
         private int RecentWins { get; set; }
-        private int TotalPointsScored { get; set; }
-        private int TotalPointsConceded { get; set; }
+        public int TotalPointsScored { get; private set; }
+        public int TotalPointsConceded { get; private set; }
 
         #endregion
 
@@ -42,6 +42,8 @@ namespace Tournament.Models
             PointDifferential = (double)(TotalPointsScored - TotalPointsConceded) / RecentGames;
         }
 
+        #region Calculations
+
         private double CalculateFormStrength(double maxDifferential)
         {
             var totalGames = Exibitions.Count + RecentGames;
@@ -64,10 +66,34 @@ namespace Tournament.Models
             Strength = (rankingStrength * Constants.RankingWeight) + (formStrength * Constants.FormWeight);
         }
 
+        #endregion
+
+        public void UpdateTeamGames(TeamData team2, int pointsScored, int pointsConceded, bool won)
+        {
+            Games.Add(new Game
+            {
+                Opponent = team2.ISOCode,
+                Result = $"{pointsScored}-{pointsConceded}"
+            });
+
+            if (pointsScored > pointsConceded)
+            {
+                Points += 2;
+            }
+            else
+            {
+                Points++;
+            }
+        }
 
         public override string? ToString()
         {
             return $" {Team}\t {RecentWins} / {RecentGames - RecentWins} / {Points} / {TotalPointsScored} / {TotalPointsConceded} / {TotalPointsScored - TotalPointsConceded}";
+        }
+
+        public bool HasPlayedAgainst(TeamData team2)
+        {
+            return Games.Any(game => game.Opponent == team2.ISOCode);
         }
     }
 }

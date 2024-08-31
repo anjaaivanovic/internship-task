@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using Tournament.Common;
+using static System.Formats.Asn1.AsnWriter;
 
 namespace Tournament.Models
 {
@@ -126,31 +127,7 @@ namespace Tournament.Models
 
         #endregion
 
-        private List<(string, string)> GeneratePairings(Group group)
-        {
-            var pairings = new List<(string, string)>();
-            int numTeams = group.Teams.Count;
-
-            for (int round = 0; round < numTeams - 1; round++)
-            {
-                for (int i = 0; i < numTeams / 2; i++)
-                {
-                    var team1 = group.Teams[i];
-                    var team2 = group.Teams[numTeams - 1 - i];
-
-                    if (team1 != null && team2 != null)
-                    {
-                        pairings.Add((team1.ISOCode, team2.ISOCode));
-                    }
-                }
-
-                var lastTeam = group.Teams[numTeams - 1];
-                group.Teams.RemoveAt(numTeams - 1);
-                group.Teams.Insert(1, lastTeam);
-            }
-
-            return pairings;
-        }
+        #region MatchSimulation
 
         public int SimulateScore(double teamStrength)
         {
@@ -168,41 +145,42 @@ namespace Tournament.Models
             return simulatedScore;
         }
 
-        private (int, int) SimulateMatch(TeamData team1, TeamData team2)
+        private (int, int) SimulateMatch(TeamData team1, TeamData team2, char addedTab = '\t')
         {
             Random random = new Random();
 
             int team1Score = SimulateScore(team1.Strength);
             int team2Score = SimulateScore(team2.Strength);
 
+            if (team1Score == team2Score)
+            {
+                var rand = random.Next(0, 2);
+                if (rand == 0)
+                {
+                    team1Score++;
+                }
+                else
+                {
+                    team2Score++;
+                }
+            }
+            Console.WriteLine($"\t{addedTab}{team1.Team} - {team2.Team} ({team1Score}:{team2Score})");
+            team1.UpdateTeamGames(team2, team1Score, team2Score, team1Score > team2Score);
+            team2.UpdateTeamGames(team1, team2Score, team1Score, team2Score > team1Score);
+
             return (team1Score, team2Score);
         }
 
-        private void UpdateTeamGames(TeamData team1, TeamData team2, int pointsScored, int pointsConceded, bool won)
-        {
-            team1.Games.Add(new Game {
-                Opponent = team2.ISOCode,
-                Result = $"{pointsScored}-{pointsConceded}" 
-            });
+        #endregion
 
-            if (pointsScored > pointsConceded)
-            {
-                team1.Points += 2;
-            }
-            else
-            {
-                team1.Points++;
-            }
-        }
-
-        public void RunTournament()
+        private void GroupPhase()
         {
             int maxRounds = 0;
             int maxGames = 0;
 
             foreach (var group in Groups)
             {
-                group.Pairings = GeneratePairings(group);
+                group.GeneratePairings();
                 maxGames = group.Teams.Count / 2;
                 maxRounds = group.Pairings.Count / maxGames;
             }
@@ -210,7 +188,7 @@ namespace Tournament.Models
             int counter = 0;
 
             for (int i = 0; i < maxRounds; i++)
-            {    
+            {
                 Console.WriteLine($"{i + 1}. Kolo:");
 
                 foreach (var group in Groups)
@@ -222,21 +200,180 @@ namespace Tournament.Models
                         var team1 = group.Teams.FirstOrDefault(team => team.ISOCode == group.Pairings[counter + j].Item1);
                         var team2 = group.Teams.FirstOrDefault(team => team.ISOCode == group.Pairings[counter + j].Item2);
 
-                        var (team1Score, team2Score) = SimulateMatch(team1, team2);
-
-                        Console.WriteLine($"\t\t{team1.Team} - {team2.Team} ({team1Score}:{team2Score})");
-
-                        UpdateTeamGames(team1, team2, team1Score, team2Score, team1Score > team2Score);
-                        UpdateTeamGames(team2, team1, team2Score, team1Score, team2Score > team1Score);
+                        var (score1, score2) = SimulateMatch(team1, team2);
                     }
 
                     group.RankTeams();
                 }
                 counter += maxGames;
             }
+            CalculateTeamStrengths();
+        }
+
+        #region Pots
+
+        private Group CreatePots()
+        {
+            var firstPlaced = new Group { Teams = Groups.Select(g => g.Teams[0]).ToList() };
+            var secondPlaced = new Group { Teams = Groups.Select(g => g.Teams[1]).ToList() };
+            var thirdPlaced = new Group { Teams = Groups.Select(g => g.Teams[2]).ToList() };
+
+            firstPlaced.RankPotTeams();
+            secondPlaced.RankPotTeams();
+            thirdPlaced.RankPotTeams();
+            thirdPlaced.Teams.RemoveAt(2);
+
+            return new Group
+            {
+                Name = Constants.Quarterfinals,
+                Teams = firstPlaced.Teams.Concat(secondPlaced.Teams).Concat(thirdPlaced.Teams).ToList()
+            };
+        }
+
+        private void PrintPots()
+        {
+            var pots = CreatePots();
+            Groups = [pots];
+            char pot = 'D';
+            Console.WriteLine("Sesiri:");
+
+            for (int i = 0; i < pots.Teams.Count; i++)
+            {
+                if (i % 2 == 0)
+                {
+                    Console.WriteLine($"\tSesir {pot++}:");
+                }
+                Console.WriteLine($"\t\t{pots.Teams[i].Team}");
+            }
+            
+            Groups[0].Pairings = GenerateQuarterfinals();
+            PrintEliminationPhase(pots);
+        }
+
+        private void PrintEliminationPhase(Group pots)
+        {
+            Console.WriteLine($"\n{Constants.EliminationPhase}:");
+
+            var pairings = Groups[0].Pairings;
+
+            for (int i = 0; i < pairings.Count; i++)
+            {
+                var team1 = pots.Teams.FirstOrDefault(team => team.ISOCode == pairings[i].Item1)?.Team;
+                var team2 = pots.Teams.FirstOrDefault(team => team.ISOCode == pairings[i].Item2)?.Team;
+
+                Console.WriteLine($"\t{team1} - {team2}");
+                if (i % 2 == 1) Console.WriteLine();
+            }
+        }
+
+        private List<(string, string)> GenerateQuarterfinals()
+        {
+            var teams = Groups[0].Teams;
+            var quarterfinals = new List<(string, string)>();
+
+            AddPairing(quarterfinals, teams[0], teams[6], teams[1], teams[7]);
+            AddPairing(quarterfinals, teams[2], teams[4], teams[3], teams[5]);
+
+            (quarterfinals[1], quarterfinals[2]) = (quarterfinals[2], quarterfinals[1]);
+
+            return quarterfinals;
+        }
+
+        private void AddPairing(List<(string, string)> quarterfinals, TeamData teamA1, TeamData teamA2, TeamData teamB1, TeamData teamB2)
+        {
+            if (!teamA1.HasPlayedAgainst(teamA2) && !teamB1.HasPlayedAgainst(teamB2))
+            {
+                quarterfinals.Add((teamA1.ISOCode, teamA2.ISOCode));
+                quarterfinals.Add((teamB1.ISOCode, teamB2.ISOCode));
+            }
+            else
+            {
+                quarterfinals.Add((teamB1.ISOCode, teamA2.ISOCode));
+                quarterfinals.Add((teamA1.ISOCode, teamB2.ISOCode));
+            }
+        }
+
+        #endregion
+
+        private void Phase(string currentPhase, string nextPhase = "")
+        {
+            var group = Groups.FirstOrDefault(g => g.Name == currentPhase);
+            var pairings = group.Pairings;
+
+            Console.WriteLine($"\n{currentPhase}:");
+
+            var winners = new List<TeamData>();
+            var newPairings = new List<(string, string)>();
+
+            foreach (var (team1, team2) in pairings.Select(p => (
+                group.Teams.First(t => t.ISOCode == p.Item1),
+                group.Teams.First(t => t.ISOCode == p.Item2))))
+            {
+                var (score1, score2) = SimulateMatch(team1, team2, '\0');
+                winners.Add(score1 > score2 ? team1 : team2);
+            }
+
+            for (int i = 0; i < winners.Count; i += 2)
+            {
+                newPairings.Add((winners[i].ISOCode, winners[i + 1].ISOCode));
+            }
+
+            Groups.Add(new Group
+            {
+                Name = nextPhase,
+                Teams = winners,
+                Pairings = newPairings
+            });
+
+            if (nextPhase == Constants.Finals)
+            {
+                group.Teams.Where(t => !winners.Contains(t)).ToList()
+                    .ForEach(t => Groups.First(g => g.Name == nextPhase).Teams.Add(t));
+            }
 
             CalculateTeamStrengths();
+        }
+
+        private void LastPhase()
+        {
+            var group = Groups.FirstOrDefault(g => g.Name == Constants.Finals);
+            var teams = group.Teams;
+            var medals = new List<string>();
+
+            for (int i = teams.Count - 1; i > 0; i -= 2)
+            {
+                var team1 = teams[i];
+                var team2 = teams[i - 1];
+
+                Console.WriteLine($"\n{(i > 1 ? Constants.ThirdPlaceGame : Constants.Finals)}:");
+
+                var (score1, score2) = SimulateMatch(team1, team2, '\0');
+                medals.Add(score1 < score2 ? team1.Team : team2.Team);
+                medals.Add(score1 > score2 ? team1.Team : team2.Team);
+            }
+
+            medals.RemoveAt(0);
+            medals.Reverse();
+
+            Console.WriteLine($"\n{Constants.Medals}:");
+            for (int i = 0; i < medals.Count; i++)
+            {
+                Console.WriteLine($"\t{i + 1}. {medals[i]}");
+            }
+
+            CalculateTeamStrengths();
+        }
+
+        public void RunTournament()
+        {
+            CalculateTeamStrengths();
+            GroupPhase();
             PrintGroupData();
+            CreatePots();
+            PrintPots();
+            Phase(Constants.Quarterfinals, Constants.Semifinals);
+            Phase(Constants.Semifinals, Constants.Finals);
+            LastPhase();
         }
     }
 }
